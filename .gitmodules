@@ -1,0 +1,9 @@
+[submodule "profile-service"]
+	path = profile-service
+	url = https://github.com/MsngrBackend/ProfileService
+[submodule "auth-service"]
+	path = auth-service
+	url = https://github.com/MsngrBackend/AuthService
+[submodule "message-service"]
+	path = message-service
+	url = https://github.com/MsngrBackend/MessageService
