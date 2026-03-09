@@ -20,13 +20,14 @@ jobs:
         run: |
           # auth-service
           cd auth-service
+          mv .env.example .env
           docker build -t auth-service:latest .
           docker stop auth-service || true
           docker rm auth-service || true
           docker run -d \
             --name auth-service \
             --restart unless-stopped \
-            --network app-network \
+            --network msngr-network \
             auth-service:latest
           cd ..
 
@@ -39,18 +40,19 @@ jobs:
           docker run -d \
             --name message-service \
             --restart unless-stopped \
-            --network app-network \
+            --network msngr-network \
             message-service:latest
           cd ..
 
           # profile-service
           cd profile-service
+          mv .env.example .env
           docker build -t profile-service:latest .
           docker stop profile-service || true
           docker rm profile-service || true
           docker run -d \
             --name profile-service \
             --restart unless-stopped \
-            --network app-network \
+            --network msngr-network \
             profile-service:latest
           cd ..
