@@ -41,7 +41,7 @@ jobs:
           POSTGRES_DB=${{ secrets.MESSAGE_POSTGRES_DB }}
           POSTGRES_USER=${{ secrets.MESSAGE_POSTGRES_USER }}
           POSTGRES_PASSWORD=${{ secrets.MESSAGE_POSTGRES_PASSWORD }}
-          DATABASE_URL=postgresql+asyncpg://${{ secrets.MESSAGE_POSTGRES_USER }}:${{ secrets.MESSAGE_POSTGRES_PASSWORD }}@postgres:5432/${{ secrets.MESSAGE_POSTGRES_DB }}
+          DATABASE_URL=postgresql+asyncpg://${{ secrets.MESSAGE_POSTGRES_USER }}:${{ secrets.MESSAGE_POSTGRES_PASSWORD }}@messaging_postgres:5432/${{ secrets.MESSAGE_POSTGRES_DB }}
           EOF
 
           cat > profile-service/.env <<'EOF'
