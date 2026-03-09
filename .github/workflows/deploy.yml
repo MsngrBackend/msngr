@@ -16,43 +16,60 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Build and deploy each service
+      - name: Create .env files from secrets
         run: |
-          # auth-service
+          cat > auth-service/.env <<EOF
+          HTTP_PORT=8081
+
+          POSTGRES_HOST=postgres
+          POSTGRES_PORT=5432
+          POSTGRES_USER=${{ secrets.AUTH_POSTGRES_USER }}
+          POSTGRES_PASSWORD=${{ secrets.AUTH_POSTGRES_PASSWORD }}
+          POSTGRES_DB=${{ secrets.AUTH_POSTGRES_DB }}
+          POSTGRES_SSLMODE=disable
+
+          REDIS_ADDR=redis:6379
+          REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+          REDIS_DB=0
+
+          JWT_ACCESS_SECRET=${{ secrets.JWT_ACCESS_SECRET }}
+          JWT_ACCESS_TTL=15m
+          JWT_REFRESH_TTL=720h
+
+          EMAIL_CODE_TTL=15m
+
+          PROFILE_SERVICE_URL=http://profile-service:8082
+          EOF
+
+          cat > message-service/.env <<EOF
+          POSTGRES_DB=${{ secrets.MESSAGE_POSTGRES_DB }}
+          POSTGRES_USER=${{ secrets.MESSAGE_POSTGRES_USER }}
+          POSTGRES_PASSWORD=${{ secrets.MESSAGE_POSTGRES_PASSWORD }}
+          DATABASE_URL=postgresql+asyncpg://${{ secrets.MESSAGE_POSTGRES_USER }}:${{ secrets.MESSAGE_POSTGRES_PASSWORD }}@postgres:5432/${{ secrets.MESSAGE_POSTGRES_DB }}
+          EOF
+
+          cat > profile-service/.env <<EOF
+          POSTGRES_USER=${{ secrets.PROFILE_POSTGRES_USER }}
+          POSTGRES_PASSWORD=${{ secrets.PROFILE_POSTGRES_PASSWORD }}
+          POSTGRES_DB=${{ secrets.PROFILE_POSTGRES_DB }}
+          MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}
+          MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}
+          EOF
+
+      - name: Deploy auth-service
+        run: |
           cd auth-service
-          mv .env.example .env
-          docker build -t auth-service:latest .
-          docker stop auth-service || true
-          docker rm auth-service || true
-          docker run -d \
-            --name auth-service \
-            --restart unless-stopped \
-            --network msngr-network \
-            auth-service:latest
-          cd ..
+          docker compose down --remove-orphans || true
+          docker compose up -d --build
 
-          # message-service
+      - name: Deploy message-service
+        run: |
           cd message-service
-          mv .env.example .env
-          docker build -t message-service:latest .
-          docker stop message-service || true
-          docker rm message-service || true
-          docker run -d \
-            --name message-service \
-            --restart unless-stopped \
-            --network msngr-network \
-            message-service:latest
-          cd ..
+          docker compose down --remove-orphans || true
+          docker compose up -d --build
 
-          # profile-service
+      - name: Deploy profile-service
+        run: |
           cd profile-service
-          mv .env.example .env
-          docker build -t profile-service:latest .
-          docker stop profile-service || true
-          docker rm profile-service || true
-          docker run -d \
-            --name profile-service \
-            --restart unless-stopped \
-            --network msngr-network \
-            profile-service:latest
-          cd ..
+          docker compose down --remove-orphans || true
+          docker compose up -d --build
