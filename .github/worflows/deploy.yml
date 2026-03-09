@@ -1,0 +1,56 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout repo with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Build and deploy each service
+        run: |
+          # auth-service
+          cd auth-service
+          docker build -t auth-service:latest .
+          docker stop auth-service || true
+          docker rm auth-service || true
+          docker run -d \
+            --name auth-service \
+            --restart unless-stopped \
+            --network app-network \
+            auth-service:latest
+          cd ..
+
+          # message-service
+          cd message-service
+          mv .env.example .env
+          docker build -t message-service:latest .
+          docker stop message-service || true
+          docker rm message-service || true
+          docker run -d \
+            --name message-service \
+            --restart unless-stopped \
+            --network app-network \
+            message-service:latest
+          cd ..
+
+          # profile-service
+          cd profile-service
+          docker build -t profile-service:latest .
+          docker stop profile-service || true
+          docker rm profile-service || true
+          docker run -d \
+            --name profile-service \
+            --restart unless-stopped \
+            --network app-network \
+            profile-service:latest
+          cd ..
