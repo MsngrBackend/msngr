@@ -19,37 +19,32 @@ jobs:
 
       - name: Create .env files from secrets
         run: |
-          cat > auth-service/.env <<EOF
+          cat > auth-service/.env <<'EOF'
           HTTP_PORT=8081
-
           POSTGRES_HOST=postgres
           POSTGRES_PORT=5432
           POSTGRES_USER=${{ secrets.AUTH_POSTGRES_USER }}
           POSTGRES_PASSWORD=${{ secrets.AUTH_POSTGRES_PASSWORD }}
           POSTGRES_DB=${{ secrets.AUTH_POSTGRES_DB }}
           POSTGRES_SSLMODE=disable
-
           REDIS_ADDR=redis:6379
           REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
           REDIS_DB=0
-
           JWT_ACCESS_SECRET=${{ secrets.JWT_ACCESS_SECRET }}
           JWT_ACCESS_TTL=15m
           JWT_REFRESH_TTL=720h
-
           EMAIL_CODE_TTL=15m
-
           PROFILE_SERVICE_URL=http://profile-service:8082
           EOF
 
-          cat > message-service/.env <<EOF
+          cat > message-service/.env <<'EOF'
           POSTGRES_DB=${{ secrets.MESSAGE_POSTGRES_DB }}
           POSTGRES_USER=${{ secrets.MESSAGE_POSTGRES_USER }}
           POSTGRES_PASSWORD=${{ secrets.MESSAGE_POSTGRES_PASSWORD }}
           DATABASE_URL=postgresql+asyncpg://${{ secrets.MESSAGE_POSTGRES_USER }}:${{ secrets.MESSAGE_POSTGRES_PASSWORD }}@postgres:5432/${{ secrets.MESSAGE_POSTGRES_DB }}
           EOF
 
-          cat > profile-service/.env <<EOF
+          cat > profile-service/.env <<'EOF'
           POSTGRES_USER=${{ secrets.PROFILE_POSTGRES_USER }}
           POSTGRES_PASSWORD=${{ secrets.PROFILE_POSTGRES_PASSWORD }}
           POSTGRES_DB=${{ secrets.PROFILE_POSTGRES_DB }}
