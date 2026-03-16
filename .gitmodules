@@ -9,4 +9,4 @@
 	url = https://github.com/MsngrBackend/MessageService
 [submodule "frontend"]
 	path = frontend
-	url = git@github.com:FanatGlenta/VlrtnrtMessenger.git
+	url = https://github.com/MsngrBackend/frontend
