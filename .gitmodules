@@ -7,3 +7,6 @@
 [submodule "message-service"]
 	path = message-service
 	url = https://github.com/MsngrBackend/MessageService
+[submodule "frontend"]
+	path = frontend
+	url = git@github.com:FanatGlenta/VlrtnrtMessenger.git
