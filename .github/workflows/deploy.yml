@@ -136,10 +136,10 @@ jobs:
                 - ./nginx.conf:/etc/nginx/nginx.conf:ro
                 - ./certs:/etc/nginx/certs:ro
               networks:
-                - msngr_network
+                - msngr-network
 
           networks:
-            msngr_network:
+            msngr-network:
               external: true
           EOF
 
@@ -193,7 +193,7 @@ jobs:
       # STEP 4: Create Docker network
       - name: Create Docker network
         run: |
-          docker network inspect msngr_network >/dev/null 2>&1 || docker network create msngr_network
+          docker network inspect msngr-network >/dev/null 2>&1 || docker network create msngr-network
 
       - name: Deploy profile-service
         run: |
