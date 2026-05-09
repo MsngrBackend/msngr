@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-  schedule:
-    - cron: '0 0 */5 * *'
   workflow_dispatch:
 
 jobs:
@@ -20,33 +18,31 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      # STEP 1: Issue Let's Encrypt IP certificate
-      - name: Issue Let's Encrypt IP Certificate
+      - name: Generate Self-Signed SSL Certificate
         env:
           PUBLIC_IP: ${{ secrets.PUBLIC_IP }}
-          EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
         run: |
-          if [ ! -d "$HOME/.acme.sh" ]; then
-            curl https://get.acme.sh | sh -s email=$EMAIL
-          fi
+          # Install OpenSSL if not present
+          sudo apt-get update && sudo apt-get install -y openssl
 
-          export PATH="$HOME/.acme.sh:$PATH"
           mkdir -p ./nginx-proxy/certs
 
-          ~/.acme.sh/acme.sh --issue --server letsencrypt \
-            -d $PUBLIC_IP \
-            --certificate-profile shortlived \
-            --standalone \
-            --force
+          # Generate self-signed certificate (valid for 10 years)
+          openssl req -x509 -nodes -newkey rsa:2048 \
+            -keyout ./nginx-proxy/certs/key.pem \
+            -out ./nginx-proxy/certs/cert.pem \
+            -days 3650 \
+            -subj "/C=US/ST=State/L=City/O=SelfSigned/CN=$PUBLIC_IP" \
+            -addext "subjectAltName=IP:$PUBLIC_IP"
 
-          ~/.acme.sh/acme.sh --install-cert -d $PUBLIC_IP \
-            --cert-file ./nginx-proxy/certs/cert.pem \
-            --key-file ./nginx-proxy/certs/key.pem \
-            --fullchain-file ./nginx-proxy/certs/fullchain.pem
+          # Create fullchain (same as cert for self-signed)
+          cp ./nginx-proxy/certs/cert.pem ./nginx-proxy/certs/fullchain.pem
 
           chmod 644 ./nginx-proxy/certs/*.pem
 
-      # STEP 2: Setup Nginx reverse proxy (handles HTTPS)
+          echo "Self-signed certificate generated for IP: $PUBLIC_IP"
+
+      # STEP 2: Setup Nginx reverse proxy
       - name: Setup Nginx Reverse Proxy
         env:
           PUBLIC_IP: ${{ secrets.PUBLIC_IP }}
@@ -59,7 +55,7 @@ jobs:
           }
 
           http {
-              # Your microservices (unchanged, still using HTTP internally)
+              # Upstream definitions
               upstream auth_service {
                   server auth-service:8081;
               }
@@ -68,27 +64,41 @@ jobs:
                   server frontend:80;
               }
 
-              # HTTPS server - handles all encryption
+              # HTTPS server
               server {
                   listen 443 ssl http2;
                   server_name PUBLIC_IP_PLACEHOLDER;
 
+                  # SSL certificates (self-signed)
                   ssl_certificate /etc/nginx/certs/fullchain.pem;
                   ssl_certificate_key /etc/nginx/certs/key.pem;
 
+                  # SSL configuration for self-signed
                   ssl_protocols TLSv1.2 TLSv1.3;
                   ssl_ciphers HIGH:!aNULL:!MD5;
 
-                  # Forward API requests to auth service (still HTTP internally)
+                  # Security headers
+                  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+                  add_header X-Frame-Options "SAMEORIGIN" always;
+                  add_header X-Content-Type-Options "nosniff" always;
+
+                  # Logging
+                  access_log /var/log/nginx/access.log;
+                  error_log /var/log/nginx/error.log;
+
+                  # API Gateway routes (exposed externally)
                   location /api/auth/ {
                       proxy_pass http://auth_service/;
                       proxy_set_header Host $host;
                       proxy_set_header X-Real-IP $remote_addr;
                       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                       proxy_set_header X-Forwarded-Proto $scheme;
+
+                      # Remove /api/auth prefix when forwarding
+                      rewrite ^/api/auth/(.*) /$1 break;
                   }
 
-                  # Forward frontend requests
+                  # Frontend routes (exposed externally)
                   location / {
                       proxy_pass http://frontend_service/;
                       proxy_set_header Host $host;
@@ -107,8 +117,10 @@ jobs:
           }
           EOF
 
+          # Replace placeholder with actual IP
           sed -i "s/PUBLIC_IP_PLACEHOLDER/$PUBLIC_IP/g" nginx-proxy/nginx.conf
 
+          # Create Docker Compose for Nginx
           cat > nginx-proxy/docker-compose.yml <<'EOF'
           version: '3.8'
 
@@ -173,7 +185,6 @@ jobs:
           MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}
           EOF
 
-          # frontend - ONLY change: use HTTPS for API calls
           cat > frontend/.env <<'EOF'
           VITE_API_URL=https://$PUBLIC_IP/api/auth
           VITE_WS_URL=wss://$PUBLIC_IP/api/auth
@@ -184,7 +195,6 @@ jobs:
         run: |
           docker network inspect app_network >/dev/null 2>&1 || docker network create app_network
 
-      # STEP 5: Deploy all services (unchanged from your original)
       - name: Deploy profile-service
         run: |
           cd profile-service
@@ -209,11 +219,25 @@ jobs:
           docker compose down --remove-orphans || true
           docker compose up -d --build
 
-      - name: Verify deployment
+      # STEP 6: Verify deployment
+      - name: Verify Deployment
         env:
           PUBLIC_IP: ${{ secrets.PUBLIC_IP }}
         run: |
-          sleep 10
-          echo "Deployment complete!"
-          echo "Frontend: https://$PUBLIC_IP"
+          sleep 15
+
+          echo "=========================================="
+          echo "DEPLOYMENT COMPLETE"
+          echo "=========================================="
+          echo "Frontend URL: https://$PUBLIC_IP"
           echo "API Gateway: https://$PUBLIC_IP/api/auth"
+          echo ""
+          echo "IMPORTANT: This uses a self-signed certificate"
+          echo "Browser will show security warning"
+          echo "Click 'Advanced' → 'Proceed to site' to continue"
+          echo "=========================================="
+
+          # Show running containers
+          echo ""
+          echo "Running containers:"
+          docker ps --format "table {{.Names}}\t{{.Status}}"
