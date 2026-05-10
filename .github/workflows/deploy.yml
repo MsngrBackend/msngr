@@ -78,8 +78,9 @@ jobs:
           MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}
           EOF
 
+          # FIXED: Use relative path for API_URL (not absolute)
           cat > frontend/.env <<'EOF'
-          VITE_API_URL=https://$PUBLIC_IP/api/auth
+          VITE_API_URL=/api/auth
           VITE_WS_URL=wss://$PUBLIC_IP/api/auth
           EOF
 
@@ -143,8 +144,8 @@ jobs:
           # Ensure directory exists
           mkdir -p nginx-proxy
 
-          # Create nginx.conf
-          cat > nginx-proxy/nginx.conf <<EOF
+          # Create nginx.conf with CORS and all routes
+          cat > nginx-proxy/nginx.conf <<'EOF'
           events {
               worker_connections 1024;
           }
@@ -152,9 +153,16 @@ jobs:
           http {
               resolver 127.0.0.11 valid=30s;
 
+              # CORS headers for all responses
+              map $request_method $cors_headers {
+                  default '';
+                  OPTIONS 'true';
+              }
+
               server {
-                  listen 443 ssl http2;
-                  server_name $PUBLIC_IP;
+                  listen 443 ssl;
+                  http2 on;
+                  server_name PUBLIC_IP_PLACEHOLDER;
 
                   ssl_certificate /etc/nginx/certs/fullchain.pem;
                   ssl_certificate_key /etc/nginx/certs/key.pem;
@@ -162,42 +170,88 @@ jobs:
                   ssl_protocols TLSv1.2 TLSv1.3;
                   ssl_ciphers HIGH:!aNULL:!MD5;
 
-                  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-                  add_header X-Frame-Options "SAMEORIGIN" always;
-                  add_header X-Content-Type-Options "nosniff" always;
+                  # Add CORS headers
+                  add_header 'Access-Control-Allow-Origin' '*' always;
+                  add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, PATCH, OPTIONS' always;
+                  add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type, X-Requested-With' always;
+                  add_header 'Access-Control-Allow-Credentials' 'true' always;
 
                   access_log /var/log/nginx/access.log;
                   error_log /var/log/nginx/error.log;
 
-                  # API Gateway
+                  # Handle preflight OPTIONS requests
+                  location /api/ {
+                      if ($request_method = 'OPTIONS') {
+                          add_header 'Access-Control-Allow-Origin' '*';
+                          add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, PATCH, OPTIONS';
+                          add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type';
+                          add_header 'Access-Control-Max-Age' 86400;
+                          add_header 'Content-Length' 0;
+                          return 204;
+                      }
+                  }
+
+                  # Auth Service API Gateway
                   location /api/auth/ {
                       proxy_pass http://auth-service-auth-1:8081/;
-                      proxy_set_header Host \$host;
-                      proxy_set_header X-Real-IP \$remote_addr;
-                      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                      proxy_set_header X-Forwarded-Proto \$scheme;
-                      proxy_set_header Authorization \$http_authorization;
+                      proxy_http_version 1.1;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP $remote_addr;
+                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                      proxy_set_header X-Forwarded-Proto $scheme;
+                      proxy_set_header Authorization $http_authorization;
+                      proxy_pass_header Authorization;
+
+                      # Pass CORS headers
+                      proxy_pass_header Access-Control-Allow-Origin;
+                  }
+
+                  # Profile Service
+                  location /api/profile/ {
+                      proxy_pass http://profile-service:8082/;
+                      proxy_http_version 1.1;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP $remote_addr;
+                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                      proxy_set_header X-Forwarded-Proto $scheme;
+                      proxy_set_header Authorization $http_authorization;
+                      proxy_pass_header Authorization;
+                  }
+
+                  # Message Service
+                  location /api/message/ {
+                      proxy_pass http://message-service:8000/;
+                      proxy_http_version 1.1;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP $remote_addr;
+                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                      proxy_set_header X-Forwarded-Proto $scheme;
+                      proxy_set_header Authorization $http_authorization;
                       proxy_pass_header Authorization;
                   }
 
                   # Frontend
                   location / {
                       proxy_pass http://frontend-service-app-1:80/;
-                      proxy_set_header Host \$host;
-                      proxy_set_header X-Real-IP \$remote_addr;
-                      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                      proxy_set_header X-Forwarded-Proto \$scheme;
+                      proxy_http_version 1.1;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP $remote_addr;
+                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                      proxy_set_header X-Forwarded-Proto $scheme;
                   }
               }
 
               # Redirect HTTP to HTTPS
               server {
                   listen 80;
-                  server_name $PUBLIC_IP;
-                  return 301 https://\$server_name\$request_uri;
+                  server_name PUBLIC_IP_PLACEHOLDER;
+                  return 301 https://$server_name$request_uri;
               }
           }
           EOF
+
+          # Replace placeholder with actual IP
+          sed -i "s/PUBLIC_IP_PLACEHOLDER/$PUBLIC_IP/g" nginx-proxy/nginx.conf
 
           # Create docker-compose.yml
           cat > nginx-proxy/docker-compose.yml <<'EOF'
@@ -214,6 +268,8 @@ jobs:
                 - ./certs:/etc/nginx/certs:ro
               networks:
                 - msngr-network
+              extra_hosts:
+                - "host.docker.internal:host-gateway"
 
           networks:
             msngr-network:
@@ -229,7 +285,7 @@ jobs:
 
           # Verify Nginx started
           if docker ps | grep -q nginx-reverse-proxy; then
-            echo "Nginx started successfully"
+            echo " Nginx started successfully"
             docker logs nginx-reverse-proxy --tail 10
           else
             echo "Nginx failed to start"
@@ -246,11 +302,21 @@ jobs:
           echo "=========================================="
           echo "✅ DEPLOYMENT COMPLETE"
           echo "=========================================="
-          echo "Frontend URL: https://$PUBLIC_IP"
-          echo "API Gateway: https://$PUBLIC_IP/api/auth"
+          echo "🌐 Frontend URL: https://$PUBLIC_IP"
+          echo "Auth API: https://$PUBLIC_IP/api/auth"
+          echo "Profile API: https://$PUBLIC_IP/api/profile"
+          echo "Message API: https://$PUBLIC_IP/api/message"
           echo ""
           echo "Self-signed certificate - browser will show warning"
           echo "=========================================="
           echo ""
           echo "Running containers:"
           docker ps --format "table {{.Names}}\t{{.Status}}"
+
+          echo ""
+          echo "Testing endpoints:"
+          curl -k -I https://$PUBLIC_IP 2>&1 | head -3
+
+          echo ""
+          echo "API Test:"
+          curl -k https://$PUBLIC_IP/api/auth/health 2>&1 || echo "Health endpoint may not exist"
