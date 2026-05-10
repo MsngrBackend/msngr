@@ -24,6 +24,8 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y openssl
 
+          # Clean up any existing certificate directory issues
+          rm -rf ./nginx-proxy/certs
           mkdir -p ./nginx-proxy/certs
 
           openssl req -x509 -nodes -newkey rsa:2048 \
@@ -121,7 +123,7 @@ jobs:
         env:
           PUBLIC_IP: ${{ secrets.PUBLIC_IP }}
         run: |
-          # Verify services are running before starting Nginx
+          # Verify services are running
           if ! docker ps | grep -q auth-service-auth-1; then
             echo "ERROR: auth-service-auth-1 is not running"
             docker ps
@@ -134,9 +136,14 @@ jobs:
             exit 1
           fi
 
+          # Clean up any existing conflicting files/directories
+          rm -rf nginx-proxy/nginx.conf 2>/dev/null || true
+          rm -rf nginx-proxy/nginx.conf.d 2>/dev/null || true
+
+          # Ensure directory exists
           mkdir -p nginx-proxy
 
-          # Create nginx.conf with correct container names
+          # Create nginx.conf
           cat > nginx-proxy/nginx.conf <<EOF
           events {
               worker_connections 1024;
@@ -162,10 +169,9 @@ jobs:
                   access_log /var/log/nginx/access.log;
                   error_log /var/log/nginx/error.log;
 
-                  # API Gateway - using actual container name
+                  # API Gateway
                   location /api/auth/ {
-                      set \$auth_upstream auth-service-auth-1;
-                      proxy_pass http://\$auth_upstream:8081/;
+                      proxy_pass http://auth-service-auth-1:8081/;
                       proxy_set_header Host \$host;
                       proxy_set_header X-Real-IP \$remote_addr;
                       proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -174,10 +180,9 @@ jobs:
                       proxy_pass_header Authorization;
                   }
 
-                  # Frontend - using actual container name
+                  # Frontend
                   location / {
-                      set \$frontend_upstream frontend-service-app-1;
-                      proxy_pass http://\$frontend_upstream:80/;
+                      proxy_pass http://frontend-service-app-1:80/;
                       proxy_set_header Host \$host;
                       proxy_set_header X-Real-IP \$remote_addr;
                       proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -194,7 +199,7 @@ jobs:
           }
           EOF
 
-          # Create docker-compose for Nginx
+          # Create docker-compose.yml
           cat > nginx-proxy/docker-compose.yml <<'EOF'
           services:
             nginx:
@@ -215,19 +220,20 @@ jobs:
               external: true
           EOF
 
+          # Start Nginx
           cd nginx-proxy
           docker compose down --remove-orphans || true
           docker compose up -d
 
           sleep 5
 
-          # Verify Nginx started successfully
+          # Verify Nginx started
           if docker ps | grep -q nginx-reverse-proxy; then
             echo "Nginx started successfully"
             docker logs nginx-reverse-proxy --tail 10
           else
             echo "Nginx failed to start"
-            docker logs nginx-reverse-proxy
+            docker logs nginx-reverse-proxy || true
             exit 1
           fi
 
@@ -238,18 +244,13 @@ jobs:
           sleep 10
 
           echo "=========================================="
-          echo "  DEPLOYMENT COMPLETE"
+          echo "✅ DEPLOYMENT COMPLETE"
           echo "=========================================="
           echo "Frontend URL: https://$PUBLIC_IP"
           echo "API Gateway: https://$PUBLIC_IP/api/auth"
           echo ""
           echo "Self-signed certificate - browser will show warning"
-          echo " Click 'Advanced' → 'Proceed to site'"
           echo "=========================================="
           echo ""
           echo "Running containers:"
           docker ps --format "table {{.Names}}\t{{.Status}}"
-
-          echo ""
-          echo "Testing local access:"
-          curl -k -I https://localhost 2>&1 | head -3
