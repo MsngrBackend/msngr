@@ -1,3 +1,4 @@
+---
 name: Deploy
 
 on:
@@ -44,6 +45,7 @@ jobs:
         env:
           PUBLIC_IP: ${{ secrets.PUBLIC_IP }}
         run: |
+          # Auth Service .env
           cat > auth_service/.env <<'EOF'
           HTTP_PORT=8081
           POSTGRES_HOST=postgres
@@ -63,6 +65,7 @@ jobs:
           MESSAGE_SERVICE_URL=http://message-service:8000
           EOF
 
+          # Message Service .env
           cat > message_service/.env <<'EOF'
           POSTGRES_DB=${{ secrets.MESSAGE_POSTGRES_DB }}
           POSTGRES_USER=${{ secrets.MESSAGE_POSTGRES_USER }}
@@ -72,6 +75,7 @@ jobs:
           ENCRYPTION_SERVICE_ADDR=encryption-service:8081
           EOF
 
+          # Profile Service .env
           cat > profile_service/.env <<'EOF'
           POSTGRES_USER=${{ secrets.PROFILE_POSTGRES_USER }}
           POSTGRES_PASSWORD=${{ secrets.PROFILE_POSTGRES_PASSWORD }}
@@ -80,16 +84,38 @@ jobs:
           MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}
           EOF
 
+          # Encryption Service .env - Fixed: No default values in GitHub expressions
           cat > encryption_service/.env <<'EOF'
-          POSTGRES_USER=${{ secrets.ENCRYPTION_POSTGRES_USER:-postgres }}
-          POSTGRES_PASSWORD=${{ secrets.ENCRYPTION_POSTGRES_PASSWORD:-ultramegasecret }}
-          POSTGRES_DB=${{ secrets.ENCRYPTION_POSTGRES_DB:-messaging_db }}
-          DATABASE_URL=postgres://${{ secrets.ENCRYPTION_POSTGRES_USER:-postgres }}:${{ secrets.ENCRYPTION_POSTGRES_PASSWORD:-ultramegasecret }}@postgres:5432/${{ secrets.ENCRYPTION_POSTGRES_DB:-messaging_db }}
           ENCRYPTION_SERVICE_ADDR=:8081
           EOF
+          
+          # Add PostgreSQL config with fallback using bash syntax
+          if [ -n "${{ secrets.ENCRYPTION_POSTGRES_USER }}" ]; then
+            echo "POSTGRES_USER=${{ secrets.ENCRYPTION_POSTGRES_USER }}" >> encryption_service/.env
+          else
+            echo "POSTGRES_USER=postgres" >> encryption_service/.env
+          fi
+          
+          if [ -n "${{ secrets.ENCRYPTION_POSTGRES_PASSWORD }}" ]; then
+            echo "POSTGRES_PASSWORD=${{ secrets.ENCRYPTION_POSTGRES_PASSWORD }}" >> encryption_service/.env
+          else
+            echo "POSTGRES_PASSWORD=ultramegasecret" >> encryption_service/.env
+          fi
+          
+          if [ -n "${{ secrets.ENCRYPTION_POSTGRES_DB }}" ]; then
+            echo "POSTGRES_DB=${{ secrets.ENCRYPTION_POSTGRES_DB }}" >> encryption_service/.env
+          else
+            echo "POSTGRES_DB=messaging_db" >> encryption_service/.env
+          fi
+          
+          # Build DATABASE_URL from the values
+          PG_USER=$(grep '^POSTGRES_USER=' encryption_service/.env | cut -d'=' -f2)
+          PG_PASS=$(grep '^POSTGRES_PASSWORD=' encryption_service/.env | cut -d'=' -f2)
+          PG_DB=$(grep '^POSTGRES_DB=' encryption_service/.env | cut -d'=' -f2)
+          echo "DATABASE_URL=postgres://${PG_USER}:${PG_PASS}@postgres:5432/${PG_DB}" >> encryption_service/.env
 
-          # FIXED: Use relative path for API_URL (not absolute)
-          cat > frontend/.env <<'EOF'
+          # Frontend .env
+          cat > frontend/.env <<EOF
           VITE_API_URL=
           VITE_WS_URL=wss://$PUBLIC_IP/api/v1/messages
           EOF
@@ -318,7 +344,7 @@ jobs:
 
           # Verify Nginx started
           if docker ps | grep -q nginx-reverse-proxy; then
-            echo " Nginx started successfully"
+            echo "Nginx started successfully"
             docker logs nginx-reverse-proxy --tail 10
           else
             echo "Nginx failed to start"
@@ -336,9 +362,9 @@ jobs:
           echo "✅ DEPLOYMENT COMPLETE"
           echo "=========================================="
           echo "🌐 Frontend URL: https://$PUBLIC_IP"
-          echo "Auth API: https://$PUBLIC_IP/api/auth"
-          echo "Profile API: https://$PUBLIC_IP/api/profile"
-          echo "Message API: https://$PUBLIC_IP/api/message"
+          echo "Auth API: https://$PUBLIC_IP/api/v1/auth"
+          echo "Profile API: https://$PUBLIC_IP/api/v1/profile"
+          echo "Message API: https://$PUBLIC_IP/api/v1/messages"
           echo ""
           echo "Self-signed certificate - browser will show warning"
           echo "=========================================="
@@ -352,4 +378,4 @@ jobs:
 
           echo ""
           echo "API Test:"
-          curl -k https://$PUBLIC_IP/api/auth/health 2>&1 || echo "Health endpoint may not exist"
+          curl -k https://$PUBLIC_IP/api/v1/auth/health 2>&1 || echo "Health endpoint may not exist"
