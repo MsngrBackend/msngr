@@ -125,11 +125,11 @@ jobs:
           docker network inspect msngr-network >/dev/null 2>&1 || docker network create msngr-network
           echo "✅ Docker network 'msngr-network' created"
 
-      - name: Deploy profile-service
-        run: |
-          cd profile_service
-          docker compose down --remove-orphans || true
-          docker compose up -d --build
+      # - name: Deploy profile-service
+      #   run: |
+      #     cd profile_service
+      #     docker compose down --remove-orphans || true
+      #     docker compose up -d --build
 
       - name: Deploy message-service
         run: |
@@ -185,11 +185,11 @@ jobs:
             exit 1
           fi
 
-          if ! docker ps | grep -q profile-service; then
-            echo "ERROR: profile-service is not running"
-            docker ps
-            exit 1
-          fi
+          # if ! docker ps | grep -q profile-service; then
+          #   echo "ERROR: profile-service is not running"
+          #   docker ps
+          #   exit 1
+          # fi
 
           # Clean up any existing conflicting files/directories
           rm -rf nginx-proxy/nginx.conf 2>/dev/null || true
@@ -260,17 +260,17 @@ jobs:
                       proxy_pass_header Access-Control-Allow-Origin;
                   }
 
-                  # Profile Service
-                  location /api/v1/profile/ {
-                      proxy_pass http://profile-service:8082/;
-                      proxy_http_version 1.1;
-                      proxy_set_header Host $host;
-                      proxy_set_header X-Real-IP $remote_addr;
-                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                      proxy_set_header X-Forwarded-Proto $scheme;
-                      proxy_set_header Authorization $http_authorization;
-                      proxy_pass_header Authorization;
-                  }
+                  # # Profile Service
+                  # location /api/v1/profile/ {
+                  #     proxy_pass http://profile-service:8082/;
+                  #     proxy_http_version 1.1;
+                  #     proxy_set_header Host $host;
+                  #     proxy_set_header X-Real-IP $remote_addr;
+                  #     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  #     proxy_set_header X-Forwarded-Proto $scheme;
+                  #     proxy_set_header Authorization $http_authorization;
+                  #     proxy_pass_header Authorization;
+                  # }
 
                   # Message Service (with WebSocket support)
                   location /api/v1/messages/ {
